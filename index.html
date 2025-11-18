@@ -335,6 +335,8 @@ function handleCDNError(library) {
 let particles = [];
 let flowField;
 let currentMode = 'spiral';
+let previousMode = 'spiral';
+let modeTransition = 1.0; // 0 = previous mode, 1 = current mode
 let isPaused = false;
 let showFPS = false;
 let lastFrameTime = 0;
@@ -479,9 +481,41 @@ class FlowField {
     calculateAngle(x, y, xOff, yOff) {
         let centerX = this.cols / 2;
         let centerY = this.rows / 2;
-        let angle = 0;
 
-        switch(currentMode) {
+        // If transitioning between modes, blend the angles
+        if (modeTransition < 1.0) {
+            let prevAngle = this.calculateModeAngle(previousMode, x, y, xOff, yOff, centerX, centerY);
+            let currAngle = this.calculateModeAngle(currentMode, x, y, xOff, yOff, centerX, centerY);
+
+            // Smooth interpolation between angles
+            let angle = this.lerpAngle(prevAngle, currAngle, modeTransition);
+
+            // Still apply interaction points
+            angle = this.applyInteractionPoints(angle, x, y);
+            return angle;
+        }
+
+        // Normal mode (no transition)
+        let angle = this.calculateModeAngle(currentMode, x, y, xOff, yOff, centerX, centerY);
+        angle = this.applyInteractionPoints(angle, x, y);
+        return angle;
+    }
+
+    // Helper: Interpolate between two angles smoothly
+    lerpAngle(a, b, t) {
+        // Handle angle wrapping for smooth interpolation
+        let diff = b - a;
+        if (diff > PI) diff -= TWO_PI;
+        if (diff < -PI) diff += TWO_PI;
+        return a + diff * t;
+    }
+
+    // Helper: Calculate angle for a specific mode
+    calculateModeAngle(mode, x, y, xOff, yOff, centerX, centerY) {
+        let angle = 0;
+        let dx, dy;
+
+        switch(mode) {
             case 'perlin':
                 // Classic Perlin noise flow field
                 angle = noise(xOff, yOff, timeOffset) * TWO_PI * 4;
@@ -532,7 +566,11 @@ class FlowField {
                 break;
         }
 
-        // Apply interaction points (mouse clicks)
+        return angle;
+    }
+
+    // Helper: Apply interaction point forces to angle
+    applyInteractionPoints(angle, x, y) {
         for (let point of interactionPoints) {
             let px = floor(point.x / this.resolution);
             let py = floor(point.y / this.resolution);
@@ -545,7 +583,6 @@ class FlowField {
                 angle += (force / pdist) * point.strength;
             }
         }
-
         return angle;
     }
 }
@@ -602,6 +639,12 @@ function draw() {
         // Update time offsets for animation
         timeOffset += 0.003;
         colorOffset += settings.colorShiftSpeed * 0.5;
+
+        // Update mode transition (smooth blend between modes)
+        if (modeTransition < 1.0) {
+            modeTransition += 0.02; // Transition over ~50 frames (0.8 seconds)
+            if (modeTransition > 1.0) modeTransition = 1.0;
+        }
 
         // Update flow field periodically
         if (frameCount % 3 === 0) {
@@ -840,7 +883,15 @@ function handleKeyPress(e) {
 
 // Set current mode and update UI
 function setMode(mode) {
-    currentMode = mode;
+    // Don't restart transition if clicking same mode
+    if (mode === currentMode && modeTransition === 1.0) return;
+
+    // Start smooth transition from current to new mode
+    if (mode !== currentMode) {
+        previousMode = currentMode;
+        currentMode = mode;
+        modeTransition = 0.0; // Start transition
+    }
 
     // Update button styles
     document.querySelectorAll('.mode-btn').forEach(btn => {
@@ -848,8 +899,7 @@ function setMode(mode) {
     });
     document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
 
-    // Reset flow field for immediate update
-    flowField.update();
+    // Flow field will update automatically during transition
 }
 
 // Reset the entire system
