@@ -3,9 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flow Field Particle System</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Flow Field Particle System - Interactive Visualization</title>
+
+    <!-- Meta tags for social sharing -->
+    <meta name="description" content="Hypnotic flow field particle system with 5000+ particles, multiple modes, and interactive controls. Watch particles flow through beautiful Perlin noise-based vector fields.">
+    <meta name="keywords" content="flow field, particle system, generative art, perlin noise, p5.js, interactive visualization">
+    <meta property="og:title" content="Flow Field Particle System">
+    <meta property="og:description" content="Interactive particle visualization with multiple modes and real-time controls">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js" onerror="handleCDNError('p5.js')"></script>
+    <script src="https://cdn.tailwindcss.com" onerror="handleCDNError('Tailwind CSS')"></script>
     <style>
         body {
             margin: 0;
@@ -67,6 +76,116 @@
             color: rgba(255, 255, 255, 0.9);
         }
 
+        /* Loading screen */
+        #loadingScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgb(20, 20, 30);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            color: white;
+        }
+
+        #loadingScreen.hidden {
+            display: none;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(139, 92, 246, 0.3);
+            border-top: 4px solid rgb(139, 92, 246);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Controls toggle and extras */
+        .controls-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(139, 92, 246, 0.9);
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .controls-toggle:hover {
+            transform: scale(1.1);
+            background: rgba(139, 92, 246, 1);
+        }
+
+        .controls.hidden {
+            transform: translateX(400px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .controls {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+
+        /* FPS counter */
+        #fpsCounter {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 30, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+
+        #fpsCounter.hidden {
+            display: none;
+        }
+
+        /* Notification toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(139, 92, 246, 0.95);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            z-index: 10000;
+            opacity: 0;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
         @media (max-width: 768px) {
             .controls {
                 top: 10px;
@@ -74,11 +193,41 @@
                 left: 10px;
                 max-width: none;
                 padding: 15px;
+                max-height: calc(100vh - 20px);
+                overflow-y: auto;
+            }
+
+            .controls-toggle {
+                display: flex;
+            }
+
+            #fpsCounter {
+                top: 10px;
+                left: 10px;
+                font-size: 12px;
+                padding: 6px 10px;
             }
         }
     </style>
 </head>
 <body class="bg-gray-900">
+
+<!-- Loading Screen -->
+<div id="loadingScreen">
+    <div class="spinner"></div>
+    <p class="mt-4 text-gray-400">Loading Flow Field...</p>
+</div>
+
+<!-- FPS Counter -->
+<div id="fpsCounter" class="hidden">FPS: 60</div>
+
+<!-- Toast Notifications -->
+<div id="toast" class="toast"></div>
+
+<!-- Controls Toggle (Mobile) -->
+<button class="controls-toggle" id="controlsToggle" aria-label="Toggle controls">
+    ☰
+</button>
 
 <div class="controls">
     <h2 class="text-xl font-bold mb-4 text-purple-400">Flow Field</h2>
@@ -131,27 +280,66 @@
 
     <!-- Action Buttons -->
     <div class="mt-4 space-y-2">
-        <button id="resetBtn" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded text-sm font-medium transition">
-            Reset
-        </button>
+        <div class="grid grid-cols-2 gap-2">
+            <button id="pauseBtn" class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded text-sm font-medium transition">
+                ⏸ Pause
+            </button>
+            <button id="resetBtn" class="px-3 py-2 bg-purple-600 hover:bg-purple-700 rounded text-sm font-medium transition">
+                ↻ Reset
+            </button>
+        </div>
         <button id="exportBtn" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition">
-            Export PNG
+            📸 Export PNG
         </button>
+        <div class="grid grid-cols-2 gap-2">
+            <button id="fpsToggle" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition">
+                FPS
+            </button>
+            <button id="fullscreenBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition">
+                ⛶ Full
+            </button>
+        </div>
     </div>
 
-    <div class="mt-4 text-xs text-gray-500 text-center">
-        Click to add attractors/repellers<br>
-        Move mouse to disturb field
+    <div class="mt-4 text-xs text-gray-500">
+        <div class="font-semibold text-gray-400 mb-2">Controls:</div>
+        <div class="space-y-1">
+            <div>• Click: Add attractor</div>
+            <div>• Right-click: Add repeller</div>
+            <div>• Mouse: Disturb field</div>
+            <div>• Space: Pause/Resume</div>
+            <div>• H: Hide controls</div>
+            <div>• F: Fullscreen</div>
+            <div>• R: Reset</div>
+        </div>
     </div>
 </div>
 
 <script>
+// ============================================
+// ERROR HANDLING
+// ============================================
+function handleCDNError(library) {
+    document.getElementById('loadingScreen').innerHTML = `
+        <div style="text-align: center; padding: 20px;">
+            <h2 style="color: #ef4444; margin-bottom: 10px;">⚠️ Loading Error</h2>
+            <p style="color: #9ca3af;">Failed to load ${library}.</p>
+            <p style="color: #9ca3af; margin-top: 10px;">Please check your internet connection and refresh the page.</p>
+        </div>
+    `;
+}
+
 // ============================================
 // GLOBAL CONFIGURATION
 // ============================================
 let particles = [];
 let flowField;
 let currentMode = 'spiral';
+let isPaused = false;
+let showFPS = false;
+let lastFrameTime = 0;
+let fps = 60;
+
 let settings = {
     particleCount: 5000,
     speed: 2.0,
@@ -162,7 +350,6 @@ let settings = {
 // Time and animation
 let timeOffset = 0;
 let colorOffset = 0;
-let modeTransition = 0; // For smooth mode transitions
 
 // Interactive points (attractors/repellers)
 let interactionPoints = [];
@@ -326,8 +513,10 @@ class FlowField {
 
             case 'symmetry':
                 // Mirror/symmetry effects
-                let sx = abs(x - centerX);
-                let sy = abs(y - centerY);
+                dx = x - centerX;
+                dy = y - centerY;
+                let sx = abs(dx);
+                let sy = abs(dy);
                 angle = noise(sx * 0.1, sy * 0.1, timeOffset) * TWO_PI * 4;
                 angle += atan2(dy, dx);
                 break;
@@ -381,49 +570,73 @@ function setup() {
 
     // Set initial mode
     setMode('spiral');
+
+    // Hide loading screen
+    setTimeout(() => {
+        document.getElementById('loadingScreen').classList.add('hidden');
+    }, 500);
 }
 
 // ============================================
 // P5.JS DRAW LOOP
 // ============================================
 function draw() {
+    // Calculate FPS
+    if (showFPS) {
+        let currentTime = millis();
+        if (lastFrameTime > 0) {
+            let timeDiff = currentTime - lastFrameTime;
+            fps = Math.round(1000 / timeDiff);
+            document.getElementById('fpsCounter').textContent = `FPS: ${fps}`;
+        }
+        lastFrameTime = currentTime;
+    }
+
     // Background with fade for trail effect
     // Lower alpha = longer trails
     let trailAlpha = map(settings.trailLength, 1, 50, 50, 2);
     background(20, 20, 30, trailAlpha);
 
-    // Update time offsets for animation
-    timeOffset += 0.003;
-    colorOffset += settings.colorShiftSpeed * 0.5;
+    // Skip updates if paused
+    if (!isPaused) {
+        // Update time offsets for animation
+        timeOffset += 0.003;
+        colorOffset += settings.colorShiftSpeed * 0.5;
 
-    // Update flow field periodically
-    if (frameCount % 3 === 0) {
-        flowField.update();
-    }
+        // Update flow field periodically
+        if (frameCount % 3 === 0) {
+            flowField.update();
+        }
 
-    // Update and draw all particles
-    for (let particle of particles) {
-        particle.follow(flowField);
+        // Update and draw all particles
+        for (let particle of particles) {
+            particle.follow(flowField);
 
-        // Apply mouse disturbance
-        applyMouseDisturbance(particle);
+            // Apply mouse disturbance
+            applyMouseDisturbance(particle);
 
-        particle.update();
-        particle.show();
-    }
+            particle.update();
+            particle.show();
+        }
 
-    // Draw interaction points
-    drawInteractionPoints();
+        // Decay interaction points over time
+        for (let i = interactionPoints.length - 1; i >= 0; i--) {
+            interactionPoints[i].life--;
+            interactionPoints[i].strength *= 0.98;
 
-    // Decay interaction points over time
-    for (let i = interactionPoints.length - 1; i >= 0; i--) {
-        interactionPoints[i].life--;
-        interactionPoints[i].strength *= 0.98;
-
-        if (interactionPoints[i].life <= 0) {
-            interactionPoints.splice(i, 1);
+            if (interactionPoints[i].life <= 0) {
+                interactionPoints.splice(i, 1);
+            }
+        }
+    } else {
+        // Still draw particles when paused
+        for (let particle of particles) {
+            particle.show();
         }
     }
+
+    // Always draw interaction points
+    drawInteractionPoints();
 }
 
 // ============================================
@@ -447,8 +660,14 @@ function applyMouseDisturbance(particle) {
 
 // Add attractor/repeller on click
 function mousePressed() {
-    if (mouseX < width - 320) { // Don't add if clicking on controls
-        let repel = mouseButton === RIGHT || keyIsPressed && keyCode === SHIFT;
+    // Check if clicking on controls panel
+    const controlsPanel = document.querySelector('.controls');
+    const rect = controlsPanel.getBoundingClientRect();
+    const clickedOnControls = mouseX >= rect.left && mouseX <= rect.right &&
+                               mouseY >= rect.top && mouseY <= rect.bottom;
+
+    if (!clickedOnControls) {
+        let repel = mouseButton === RIGHT || (keyIsPressed && keyCode === SHIFT);
         interactionPoints.push({
             x: mouseX,
             y: mouseY,
@@ -464,7 +683,14 @@ function mousePressed() {
 function touchStarted() {
     if (touches.length > 0) {
         let touch = touches[0];
-        if (touch.x < width - 320) {
+
+        // Check if touching controls panel
+        const controlsPanel = document.querySelector('.controls');
+        const rect = controlsPanel.getBoundingClientRect();
+        const touchedControls = touch.x >= rect.left && touch.x <= rect.right &&
+                               touch.y >= rect.top && touch.y <= rect.bottom;
+
+        if (!touchedControls) {
             interactionPoints.push({
                 x: touch.x,
                 y: touch.y,
@@ -547,15 +773,69 @@ function setupUI() {
         colorValue.textContent = settings.colorShiftSpeed.toFixed(1);
     });
 
+    // Pause button
+    document.getElementById('pauseBtn').addEventListener('click', () => {
+        togglePause();
+    });
+
     // Reset button
     document.getElementById('resetBtn').addEventListener('click', () => {
         resetSystem();
+        showToast('System reset');
     });
 
     // Export button
     document.getElementById('exportBtn').addEventListener('click', () => {
         exportImage();
     });
+
+    // FPS toggle button
+    document.getElementById('fpsToggle').addEventListener('click', () => {
+        toggleFPS();
+    });
+
+    // Fullscreen button
+    document.getElementById('fullscreenBtn').addEventListener('click', () => {
+        toggleFullscreen();
+    });
+
+    // Controls toggle (mobile)
+    document.getElementById('controlsToggle').addEventListener('click', () => {
+        document.querySelector('.controls').classList.toggle('hidden');
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', handleKeyPress);
+}
+
+// Handle keyboard shortcuts
+function handleKeyPress(e) {
+    // Don't trigger if user is typing in an input
+    if (e.target.tagName === 'INPUT') return;
+
+    switch(e.key.toLowerCase()) {
+        case ' ':
+            e.preventDefault();
+            togglePause();
+            break;
+        case 'h':
+            e.preventDefault();
+            document.querySelector('.controls').classList.toggle('hidden');
+            break;
+        case 'f':
+            e.preventDefault();
+            toggleFullscreen();
+            break;
+        case 'r':
+            e.preventDefault();
+            resetSystem();
+            showToast('System reset');
+            break;
+        case 'd':
+            e.preventDefault();
+            toggleFPS();
+            break;
+    }
 }
 
 // Set current mode and update UI
@@ -586,11 +866,63 @@ function resetSystem() {
     background(20, 20, 30);
 }
 
+// Toggle pause state
+function togglePause() {
+    isPaused = !isPaused;
+    const pauseBtn = document.getElementById('pauseBtn');
+    pauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+    pauseBtn.classList.toggle('bg-green-600');
+    pauseBtn.classList.toggle('bg-yellow-600');
+    pauseBtn.classList.toggle('hover:bg-green-700');
+    pauseBtn.classList.toggle('hover:bg-yellow-700');
+    showToast(isPaused ? 'Paused' : 'Resumed');
+}
+
+// Toggle FPS counter
+function toggleFPS() {
+    showFPS = !showFPS;
+    const fpsCounter = document.getElementById('fpsCounter');
+    const fpsBtn = document.getElementById('fpsToggle');
+
+    if (showFPS) {
+        fpsCounter.classList.remove('hidden');
+        fpsBtn.classList.add('bg-purple-600');
+        fpsBtn.classList.remove('bg-gray-700');
+    } else {
+        fpsCounter.classList.add('hidden');
+        fpsBtn.classList.remove('bg-purple-600');
+        fpsBtn.classList.add('bg-gray-700');
+    }
+}
+
+// Toggle fullscreen
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            showToast('Fullscreen not available');
+        });
+    } else {
+        document.exitFullscreen();
+    }
+}
+
+// Show toast notification
+function showToast(message) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 2000);
+}
+
 // Export current frame as high-res PNG
 function exportImage() {
     // Create a high-res render
-    let timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    let timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
     saveCanvas(`flow-field-${timestamp}`, 'png');
+    showToast('Image exported!');
 }
 
 // Handle window resize
@@ -605,8 +937,13 @@ function windowResized() {
     });
 }
 
-// Prevent right-click context menu (for repeller mode)
-document.addEventListener('contextmenu', event => event.preventDefault());
+// Prevent right-click context menu on canvas only (for repeller mode)
+window.addEventListener('load', () => {
+    const canvas = document.querySelector('canvas');
+    if (canvas) {
+        canvas.addEventListener('contextmenu', event => event.preventDefault());
+    }
+});
 </script>
 
 </body>
